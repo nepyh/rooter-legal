@@ -114,7 +114,55 @@ def inline(text):
     return out
 
 
-BLOCK_START = re.compile(r"^(#{1,6}\s|```|>\s?|\d+\.\s|-\s|---\s*$)")
+BLOCK_START = re.compile(r"^(#{1,6}\s|```|>\s?|\s*(?:\d+\.|-)\s|---\s*$)")
+LIST_LINE = re.compile(r"^( *)(?:(\d+)\.|-)\s+(.*)$")
+
+
+def parse_list_block(lines, start):
+    """Collect consecutive list lines (any indent) plus their continuation lines."""
+    entries = []
+    i = start
+    while i < len(lines):
+        match = LIST_LINE.match(lines[i])
+        if match:
+            entries.append([len(match.group(1)), match.group(2) is not None, match.group(3)])
+            i += 1
+        elif entries and lines[i].strip() and lines[i].startswith(" ") and not BLOCK_START.match(lines[i]):
+            entries[-1][2] += " " + lines[i].strip()
+            i += 1
+        else:
+            break
+    return entries, i
+
+
+def render_list(entries):
+    """Render entries as nested <ul>/<ol> by indentation, nesting sub-lists inside the parent <li>."""
+
+    def build(pos, base):
+        tag = "ol" if entries[pos][1] else "ul"
+        out = ["<%s>" % tag]
+        li_open = False
+        while pos < len(entries) and entries[pos][0] >= base:
+            indent, _ordered, text = entries[pos]
+            if indent > base:
+                sub, pos = build(pos, indent)
+                if not li_open:
+                    out.append("<li>")
+                    li_open = True
+                out.append(sub)
+                continue
+            if li_open:
+                out.append("</li>")
+            out.append("<li>" + inline(text))
+            li_open = True
+            pos += 1
+        if li_open:
+            out.append("</li>")
+        out.append("</%s>" % tag)
+        return "".join(out), pos
+
+    rendered, _ = build(0, entries[0][0])
+    return rendered
 
 
 def render_body(markdown_text):
@@ -149,20 +197,9 @@ def render_body(markdown_text):
             i += 1
             continue
 
-        if re.match(r"^\d+\.\s", line):
-            items = []
-            while i < len(lines) and re.match(r"^\d+\.\s", lines[i]):
-                items.append(re.sub(r"^\d+\.\s+", "", lines[i]))
-                i += 1
-            out.append("<ol>%s</ol>" % "".join("<li>%s</li>" % inline(x) for x in items))
-            continue
-
-        if re.match(r"^-\s", line):
-            items = []
-            while i < len(lines) and re.match(r"^-\s", lines[i]) and not re.match(r"^---", lines[i]):
-                items.append(re.sub(r"^-\s+", "", lines[i]))
-                i += 1
-            out.append("<ul>%s</ul>" % "".join("<li>%s</li>" % inline(x) for x in items))
+        if LIST_LINE.match(line):
+            entries, i = parse_list_block(lines, i)
+            out.append(render_list(entries))
             continue
 
         if re.match(r"^>\s?", line):
