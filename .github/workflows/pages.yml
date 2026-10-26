@@ -5,34 +5,37 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The Pages site was created from the gh-pages branch (build_type: legacy), so it is
+# published by force-pushing the rendered site there. actions/deploy-pages cannot be
+# used unless the repository Pages source is switched to "GitHub Actions".
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Verify generated files are up to date
         run: python3 tools/render_html.py --check
-      - name: Assemble site
-        run: python3 tools/render_html.py --site _site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Assemble site
+        run: |
+          python3 tools/render_html.py --site _site
+          touch _site/.nojekyll
+
+      - name: Publish to gh-pages
+        run: |
+          cd _site
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "deploy: ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
