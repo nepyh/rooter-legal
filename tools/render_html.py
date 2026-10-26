@@ -67,11 +67,18 @@ footer { max-width: 46rem; margin: 3rem auto 0; padding-top: 1.25rem; border-top
 """
 
 
-def page(title, description, body, footer=""):
+def page(title, description, body, footer="", source=None):
+    note = ""
+    if source:
+        note = (
+            "<!-- This file is rendered from %s in nepyh/rooter-legal. "
+            "Edit that source file instead of this one. -->\n" % source
+        )
     return (
         "<!doctype html>\n"
         '<html lang="ko">\n'
         "<head>\n"
+        "%s"
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         "<title>%s</title>\n"
@@ -80,7 +87,7 @@ def page(title, description, body, footer=""):
         "</head>\n"
         "<body>\n"
         "<main>\n%s\n</main>\n%s\n</body>\n</html>\n"
-    ) % (html.escape(title), html.escape(description), CSS, body, footer)
+    ) % (note, html.escape(title), html.escape(description), CSS, body, footer)
 
 
 def parse_front_matter(text):
@@ -229,6 +236,7 @@ def render_document(doc):
         "%s (버전 %s, %s 시행)" % (meta["title"], meta["version"], human_date(meta["effective_date"])),
         content,
         footer,
+        source="src/%s/%s.md" % (doc["slug"], doc["version"]),
     )
 
 
@@ -252,7 +260,12 @@ def render_index(docs):
         "</header>\n"
         '<ul class="index">\n%s\n</ul>'
     ) % (SERVICE, "\n".join(items))
-    return page("%s 약관 및 정책" % SERVICE, "루터(rooter) 서비스 약관 및 정책", body)
+    return page(
+        "%s 약관 및 정책" % SERVICE,
+        "루터(rooter) 서비스 약관 및 정책",
+        body,
+        source="src/<slug>/<version>.md (every document under src/)",
+    )
 
 
 def strip_comments(text):
