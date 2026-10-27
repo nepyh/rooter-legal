@@ -7,7 +7,7 @@ Usage:
   python3 tools/render_html.py --site DIR # write files, then assemble the Pages artifact in DIR
 
 No third-party dependencies: the supported subset is headings, ordered/unordered lists,
-blockquotes, fenced code, rules, paragraphs and **bold** / `code` inline spans.
+blockquotes, fenced code, rules, pipe tables, paragraphs and **bold** / `code` inline spans.
 """
 
 import html
@@ -55,6 +55,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 hr { margin: 2rem 0; border: 0; border-top: 1px solid #e4e5ea }
 a { color: #2450a4; text-underline-offset: .15em }
 footer { max-width: 46rem; margin: 3rem auto 0; padding-top: 1.25rem; border-top: 1px solid #e4e5ea; font-size: .875rem; color: #6b6f7a }
+.table-wrap { margin: 1.25rem 0; overflow-x: auto }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; line-height: 1.6 }
+th, td { padding: .55rem .7rem; border: 1px solid #e4e5ea; text-align: left; vertical-align: top }
+th { background: #f1f2f5; font-weight: 600; white-space: nowrap }
+td { background: #fff }
 .index li { margin: .6rem 0 }
 .index .stamp { color: #6b6f7a; font-size: .875rem }
 @media print {
@@ -114,7 +119,8 @@ def inline(text):
     return out
 
 
-BLOCK_START = re.compile(r"^(#{1,6}\s|```|>\s?|\s*(?:\d+\.|-)\s|---\s*$)")
+BLOCK_START = re.compile(r"^(#{1,6}\s|```|>\s?|\s*(?:\d+\.|-)\s|---\s*$|\|)")
+TABLE_SEPARATOR = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 LIST_LINE = re.compile(r"^( *)(?:(\d+)\.|-)\s+(.*)$")
 
 
@@ -165,6 +171,29 @@ def render_list(entries):
     return rendered
 
 
+def table_cells(line):
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def render_table(lines, start):
+    """Pipe table: header row, separator row (---), then body rows. Returns (html, next index)."""
+    header = table_cells(lines[start])
+    i = start + 2
+    rows = []
+    while i < len(lines) and lines[i].startswith("|"):
+        rows.append(table_cells(lines[i]))
+        i += 1
+    head = "".join("<th>%s</th>" % inline(cell) for cell in header)
+    body = "\n".join(
+        "<tr>%s</tr>" % "".join("<td>%s</td>" % inline(cell) for cell in row) for row in rows
+    )
+    return (
+        '<div class="table-wrap"><table>\n<thead><tr>%s</tr></thead>\n<tbody>\n%s\n</tbody>\n</table></div>'
+        % (head, body),
+        i,
+    )
+
+
 def render_body(markdown_text):
     lines = markdown_text.splitlines()
     out = []
@@ -195,6 +224,11 @@ def render_body(markdown_text):
         if re.match(r"^---\s*$", line):
             out.append("<hr>")
             i += 1
+            continue
+
+        if line.startswith("|") and i + 1 < len(lines) and TABLE_SEPARATOR.match(lines[i + 1]):
+            table, i = render_table(lines, i)
+            out.append(table)
             continue
 
         if LIST_LINE.match(line):
